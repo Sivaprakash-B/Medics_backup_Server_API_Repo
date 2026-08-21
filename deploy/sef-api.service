@@ -1,0 +1,21 @@
+[Unit]
+Description=SEF Internal Data API (FastAPI)
+After=network.target mysql.service
+
+[Service]
+User=sef-api
+Group=sef-api
+WorkingDirectory=/opt/db-api-gateway
+Environment="PATH=/opt/db-api-gateway/venv/bin"
+EnvironmentFile=/opt/db-api-gateway/.env
+ExecStart=/opt/db-api-gateway/venv/bin/gunicorn app.main:app \
+    --workers 4 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 127.0.0.1:8000 \
+    --access-logfile /var/log/sef-api/access.log \
+    --error-logfile /var/log/sef-api/error.log
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

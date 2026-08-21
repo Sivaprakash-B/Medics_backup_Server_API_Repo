@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="SEF Internal Database API — Read-Only Admin Dashboard for viewing MySQL tables, custom SQL querying, and API Endpoint Builder." />
+  <title>SEF Data API — SQL Query Console & API Generator</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🗄️</text></svg>" />
+</head>
+<body>
+
+<!-- ════════════════ LOGIN SCREEN ════════════════ -->
+<div class="login-screen" id="login-screen">
+  <div class="login-card" style="max-width:440px;">
+    <div style="font-size:2.4rem; margin-bottom:4px;">🗄️</div>
+    <h1 style="font-size:1.4rem;">SEF Data API Gateway</h1>
+    <p class="subtitle" style="margin-bottom:16px;">MySQL Read-Only Database &amp; SQL Query Engine</p>
+
+    <div class="login-error" id="login-error"></div>
+
+    <div class="form-group">
+      <label for="login-username" style="font-size:0.82rem; font-weight:600;">Username</label>
+      <input class="form-input" id="login-username" type="text" placeholder="e.g. guest or admin" value="guest" autocomplete="username" />
+    </div>
+    <div class="form-group">
+      <label for="login-password" style="font-size:0.82rem; font-weight:600;">Password</label>
+      <input class="form-input" id="login-password" type="password" placeholder="e.g. guest or admin" value="guest" autocomplete="current-password" />
+    </div>
+    <button class="btn btn-primary" id="login-btn" style="width:100%; margin-top:8px; padding:11px 16px; font-size:0.95rem; font-weight:600;">
+      🚀 Enter Dashboard &amp; Query Console
+    </button>
+
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border-subtle); text-align:left;">
+      <span style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:8px;">
+        ⚡ Quick 1-Click Login:
+      </span>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+        <button class="btn btn-secondary btn-sm" onclick="quickLogin('guest', 'guest')" style="justify-content:flex-start; font-size:0.78rem;">
+          👤 Guest (guest)
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="quickLogin('admin', 'admin')" style="justify-content:flex-start; font-size:0.78rem;">
+          🔑 Admin (admin)
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="quickLogin('user1', 'user1')" style="justify-content:flex-start; font-size:0.78rem;">
+          📑 User 1 (user1)
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="quickLogin('medics', 'medics')" style="justify-content:flex-start; font-size:0.78rem;">
+          ⚡ Medics (medics)
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════ APP LAYOUT ════════════════ -->
+<div class="app-layout">
+
+  <!-- ── Sidebar ─────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <h1>🗄️ SEF Data API</h1>
+      <p>MySQL Gateway & SQL Query Console</p>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Main</div>
+      <div class="nav-item active" data-page="overview">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Overview
+      </div>
+      <div class="nav-item" data-page="table-directory">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h7"/><circle cx="18" cy="18" r="3"/><path d="m20.5 20.5 1.5 1.5"/></svg>
+        Table Directory &amp; IDs
+      </div>
+      <div class="nav-item" data-page="data">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        Table Viewer
+      </div>
+
+      <div class="nav-section-label">Query &amp; API Tools</div>
+      <div class="nav-item" data-page="sql-query">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        SQL Query Console
+      </div>
+      <div class="nav-item" data-page="api-builder">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>
+        API Generator & Code
+      </div>
+      <div class="nav-item" data-page="schema">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7m0-18H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7m0-18v18"/></svg>
+        Schema Visualizer
+      </div>
+      <div class="nav-item" data-page="users">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        User Permissions
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="user-avatar">GU</div>
+        <div class="user-details">
+          <div class="name" id="user-name">guest</div>
+          <div class="role" id="user-role">viewer</div>
+        </div>
+        <button class="btn-icon" id="logout-btn" title="Logout" style="border:none;background:transparent;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main Content ────────────────────────────── -->
+  <main class="main-content">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h2 id="topbar-title">Overview</h2>
+      </div>
+      <div class="topbar-right">
+        <a href="/docs" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">📄 Swagger Docs</a>
+        <span class="status-badge" id="connection-badge">Connecting…</span>
+        <span class="readonly-badge">🔒 Read-Only</span>
+      </div>
+    </header>
+
+    <div class="page-content">
+
+      <!-- ═══════ OVERVIEW ═══════ -->
+      <section class="page-section active" id="page-overview">
+        <div class="metric-grid">
+          <div class="metric-card">
+            <div class="label">Total Tables</div>
+            <div class="value" id="stat-tables">—</div>
+            <div class="sub">Database tables</div>
+            <div class="icon-wrap purple">🗄️</div>
+          </div>
+          <div class="metric-card">
+            <div class="label">Staff / Users</div>
+            <div class="value" id="stat-users">—</div>
+            <div class="sub">Records</div>
+            <div class="icon-wrap green">👥</div>
+          </div>
+          <div class="metric-card">
+            <div class="label">Report Tables</div>
+            <div class="value" id="stat-reports">—</div>
+            <div class="sub">Report datasets</div>
+            <div class="icon-wrap amber">📊</div>
+          </div>
+          <div class="metric-card">
+            <div class="label">Database Engine</div>
+            <div class="value" id="stat-engine">—</div>
+            <div class="sub" id="stat-db-info"></div>
+            <div class="icon-wrap blue">⚡</div>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          <div class="card-header">
+            <h3>MySQL Database & SQL Query Engine</h3>
+            <span class="readonly-badge">🔒 Read-Only Mode</span>
+          </div>
+          <div class="card-body" style="color:var(--text-secondary); line-height:1.7; font-size:0.88rem;">
+            <p>Welcome to the <strong>SEF Data API Gateway & SQL Query Console</strong>. Execute custom SQL SELECT queries and generate REST API endpoints for any table in your MySQL database.</p>
+            <ul style="margin-top:12px; padding-left:20px;">
+              <li><strong>SQL Query Console</strong> — Execute custom read-only SQL queries (`SELECT ... WHERE ... ORDER BY ...`) against your MySQL server</li>
+              <li><strong>Table Viewer</strong> — Select and inspect records from any table in your MySQL schema</li>
+              <li><strong>API Generator & Code</strong> — Generate REST API URLs and cURL, Python, JS, PHP integration snippets</li>
+              <li><strong>Swagger Interactive Docs</strong> — Test all REST endpoints via <a href="/docs" target="_blank" style="color:var(--accent-hover)">/docs</a></li>
+            </ul>
+            <p style="margin-top:12px;">Connected Database: <strong id="overview-db-name" style="color:var(--accent-hover)">medics_report_db</strong></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ TABLE DIRECTORY & ID MAPPING ═══════ -->
+      <section class="page-section" id="page-table-directory">
+        <div class="glass-card" style="margin-bottom:var(--space-lg);">
+          <div class="card-header">
+            <div>
+              <h3>📋 Database Table Directory &amp; ID Mapping</h3>
+              <p style="font-size:0.82rem; color:var(--text-secondary); margin-top:2px;">
+                Lookup real MySQL table names and their assigned numeric API IDs (e.g. <code>rpt_appointments</code> ⇄ <code>Table #1</code>).
+              </p>
+            </div>
+            <div style="display:flex; gap:var(--space-sm); align-items:center;">
+              <span class="badge status-2xx" id="directory-total-badge">22 Tables</span>
+            </div>
+          </div>
+          <div class="card-body" style="padding-bottom:var(--space-md);">
+            <div class="toolbar" style="margin-bottom:0; padding:0;">
+              <div class="search-box" style="max-width:420px;">
+                <span class="search-icon">🔍</span>
+                <input id="directory-search" placeholder="Search by Table Name (e.g. rpt_patient) or ID (e.g. #1)…" oninput="filterTableDirectory()" />
+              </div>
+              <div style="display:flex; gap:var(--space-xs); flex-wrap:wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="filterDirectoryCategory('all')">All Tables</button>
+                <button class="btn btn-secondary btn-sm" onclick="filterDirectoryCategory('rpt')">📊 Report Tables (rpt_*)</button>
+                <button class="btn btn-secondary btn-sm" onclick="filterDirectoryCategory('master')">🗂️ Master Tables (u_*)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width:110px;">Table ID</th>
+                  <th>Real Table Name</th>
+                  <th>Category</th>
+                  <th style="width:110px;">Columns</th>
+                  <th>Public API Endpoint</th>
+                  <th style="width:240px; text-align:right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="directory-tbody">
+                <tr><td colspan="6"><div class="empty-state"><p>Loading table directory...</p></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ DATA VIEWER (DYNAMIC TABLE SELECTOR) ═══════ -->
+      <section class="page-section" id="page-data">
+        <div class="glass-card" style="margin-bottom:var(--space-lg);">
+          <div class="card-header">
+            <h3>📂 Table Data Viewer</h3>
+            <div id="table-viewer-sync-badge" class="badge" style="background:rgba(99,102,241,0.18); color:#a5b4fc; border:1px solid rgba(99,102,241,0.3); font-family:var(--font-mono); font-size:0.8rem;">
+              Select a table below
+            </div>
+          </div>
+          <div class="card-body">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:var(--space-md); align-items:flex-end;">
+              <!-- Selector by Table Name -->
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="display:flex; justify-content:space-between; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">
+                  <span>🗄️ Option A: Select by Table Name</span>
+                  <span class="text-muted" style="font-size:0.75rem;">(Real MySQL Name)</span>
+                </label>
+                <select class="form-select" id="table-select-name" style="font-family:var(--font-mono); font-weight:600;" onchange="onTableNameChanged(this.value, 'data')"></select>
+              </div>
+
+              <!-- Selector by Table ID -->
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="display:flex; justify-content:space-between; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">
+                  <span>🏷️ Option B: Select by Table ID</span>
+                  <span class="text-muted" style="font-size:0.75rem;">(API ID: #1, #2...)</span>
+                </label>
+                <select class="form-select" id="table-select-id" style="font-family:var(--font-mono); font-weight:600;" onchange="onTableIdChanged(this.value, 'data')"></select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input id="data-search" placeholder="Search table records…" />
+          </div>
+          <span class="text-muted" id="data-count" style="font-size:0.78rem;">0 records</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadSelectedTableData()">⟳ Refresh</button>
+        </div>
+
+        <div class="glass-card">
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead id="data-thead"></thead>
+              <tbody id="data-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SQL QUERY CONSOLE ═══════ -->
+      <section class="page-section" id="page-sql-query">
+        <div class="glass-card" style="margin-bottom:var(--space-lg);">
+          <div class="card-header">
+            <h3>⚡ SQL Query Console</h3>
+            <span class="readonly-badge">🔒 Read-Only SELECT Queries</span>
+          </div>
+          <div class="card-body">
+            <div style="display:flex; gap:var(--space-sm); align-items:center; margin-bottom:var(--space-md); flex-wrap:wrap;">
+              <label style="font-size:0.78rem; font-weight:600; color:var(--text-secondary);">Sample Queries:</label>
+              <button class="btn btn-secondary btn-sm sample-sql-btn" data-sql="SELECT * FROM rpt_patient_details LIMIT 20">Patient Details</button>
+              <button class="btn btn-secondary btn-sm sample-sql-btn" data-sql="SELECT StaffId, StaffCode, StaffName, Designation FROM u_staff_m LIMIT 50">Staff List</button>
+              <button class="btn btn-secondary btn-sm sample-sql-btn" data-sql="SELECT * FROM rpt_appointments WHERE appt_status IS NOT NULL LIMIT 25">Appointments</button>
+              <button class="btn btn-secondary btn-sm sample-sql-btn" data-sql="SELECT bh_bill_no, bh_payer_name, bh_category, bh_bill_date FROM rpt_bill_header LIMIT 30">Bill Header</button>
+            </div>
+
+            <div class="form-group">
+              <label style="font-weight:600; color:var(--text-secondary);">Write SQL Query (SELECT statements):</label>
+              <textarea class="form-textarea" id="sql-editor" placeholder="SELECT * FROM rpt_patient_details WHERE rp_pat_title_name = 'Mr.' LIMIT 50" style="font-family:var(--font-mono); font-size:0.88rem; min-height:140px; background:#070b18; color:#a78bfa; line-height:1.6;"></textarea>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:var(--space-md);">
+              <span class="text-muted" style="font-size:0.78rem;">Press Ctrl+Enter or click Execute to run query</span>
+              <button class="btn btn-primary" id="run-sql-btn">▶ Run SQL Query</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- SQL Query Results -->
+        <div class="glass-card">
+          <div class="card-header">
+            <h3>Query Results</h3>
+            <span class="badge" id="sql-result-count">0 rows</span>
+          </div>
+          <div class="card-body" style="padding:0;">
+            <div class="data-table-wrap" style="max-height:500px;">
+              <table class="data-table">
+                <thead id="sql-thead"></thead>
+                <tbody id="sql-tbody">
+                  <tr><td colspan="100%"><div class="empty-state"><div class="empty-icon">⚡</div><p>Execute an SQL query above to view results here.</p></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ API GENERATOR & CODE SNIPPETS ═══════ -->
+      <section class="page-section" id="page-api-builder">
+        <div class="glass-card" style="margin-bottom:var(--space-lg);">
+          <div class="card-header">
+            <div>
+              <h3>⚡ REST API Endpoint Generator</h3>
+              <p style="font-size:0.82rem; color:var(--text-secondary); margin-top:2px;">Select table by Name or ID to generate secure read-only REST endpoints</p>
+            </div>
+            <span class="badge status-2xx">GET Endpoint</span>
+          </div>
+          <div class="card-body">
+            <!-- Dual Synced Selectors: Table Name & Table ID -->
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:var(--space-md); background:rgba(7,11,24,0.6); padding:var(--space-md); border-radius:var(--radius-md); border:1px solid var(--border-medium);">
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="display:flex; justify-content:space-between; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">
+                  <span>🗄️ Select by Table Name:</span>
+                  <span class="text-muted" style="font-size:0.75rem;">(e.g. rpt_appointments)</span>
+                </label>
+                <select class="form-select" id="api-table-select-name" style="font-family:var(--font-mono); font-weight:600;" onchange="onTableNameChanged(this.value, 'api')"></select>
+              </div>
+
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="display:flex; justify-content:space-between; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">
+                  <span>🏷️ Relevant Table ID (Endpoint ID):</span>
+                  <span class="text-muted" style="font-size:0.75rem;">(e.g. Table #1)</span>
+                </label>
+                <select class="form-select" id="api-table-select-id" style="font-family:var(--font-mono); font-weight:600;" onchange="onTableIdChanged(this.value, 'api')"></select>
+              </div>
+            </div>
+
+            <!-- Sync confirmation pill -->
+            <div id="api-sync-indicator" style="margin-top:10px; display:flex; align-items:center; gap:8px; font-size:0.82rem; color:var(--text-secondary);">
+              <span class="badge" style="background:rgba(99,102,241,0.18); color:#a5b4fc; border:1px solid rgba(99,102,241,0.3); font-family:var(--font-mono);">
+                Mapped: <strong id="api-indicator-name">—</strong> ⇄ <strong id="api-indicator-id">—</strong>
+              </span>
+              <span class="text-muted" id="api-indicator-cols">0 columns</span>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 2fr 2fr 1fr 1fr; gap:var(--space-md); margin-top:var(--space-md);">
+              <div class="form-group">
+                <label>Search Query (primary filter)</label>
+                <input class="form-input" id="api-search" placeholder="Type search keyword..." oninput="updateApiGenerator()" />
+              </div>
+              <div class="form-group">
+                <label>Custom WHERE Clause (optional)</label>
+                <input class="form-input" id="api-where" placeholder="e.g. StaffId > 5" oninput="updateApiGenerator()" />
+              </div>
+              <div class="form-group">
+                <label>Limit (rows, optional)</label>
+                <input class="form-input" id="api-limit" type="number" placeholder="50" min="1" max="5000" oninput="updateApiGenerator()" />
+              </div>
+              <div class="form-group">
+                <label>Skip (offset, optional)</label>
+                <input class="form-input" id="api-skip" type="number" placeholder="0" min="0" oninput="updateApiGenerator()" />
+              </div>
+            </div>
+
+            <div style="margin-top:var(--space-md);">
+              <label style="font-size:0.78rem; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:6px;">Generated API Endpoint URL:</label>
+              <div style="display:flex; gap:var(--space-sm);">
+                <input class="form-input" id="generated-api-url" readonly style="font-family:var(--font-mono); color:var(--accent-hover); font-weight:600;" />
+                <button class="btn btn-primary" id="copy-api-url-btn">📋 Copy URL</button>
+                <button class="btn btn-secondary" id="test-api-btn">▶ Test Endpoint</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Code Snippet Generator -->
+        <div class="glass-card">
+          <div class="card-header">
+            <h3>💻 Integration Code Snippets</h3>
+          </div>
+          <div style="padding:0 var(--space-lg);">
+            <div class="tab-bar" style="margin:0; border-bottom:1px solid var(--border-subtle);">
+              <button class="tab-btn active" data-lang="curl">cURL</button>
+              <button class="tab-btn" data-lang="python">Python</button>
+              <button class="tab-btn" data-lang="js">JavaScript (fetch)</button>
+              <button class="tab-btn" data-lang="php">PHP</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div style="position:relative;">
+              <textarea class="form-textarea" id="code-snippet-box" readonly style="font-family:var(--font-mono); font-size:0.85rem; min-height:160px; background:#070b18; color:#a78bfa; border-color:var(--border-medium);"></textarea>
+              <button class="btn btn-secondary btn-sm" id="copy-code-btn" style="position:absolute; top:12px; right:12px;">📋 Copy Code</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live API Response -->
+        <div class="glass-card" style="margin-top:var(--space-lg);">
+          <div class="card-header">
+            <h3>Response Preview</h3>
+            <span class="badge" id="api-response-status"></span>
+          </div>
+          <div class="card-body">
+            <pre id="api-test-response" style="font-family:var(--font-mono); font-size:0.82rem; background:#070b18; padding:var(--space-md); border-radius:var(--radius-md); color:#34d399; overflow-x:auto; max-height:300px;">Click 'Test Endpoint' to execute and preview JSON output.</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCHEMA VISUALIZER ═══════ -->
+      <section class="page-section" id="page-schema">
+        <div class="schema-grid" id="schema-container">
+          <div class="empty-state">
+            <div class="empty-icon">🗄️</div>
+            <p>Loading schema…</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ USER & TABLE PERMISSIONS MANAGER ═══════ -->
+      <section class="page-section" id="page-users">
+        <div class="glass-card">
+          <div class="card-header">
+            <div>
+              <h3>👥 User Accounts & Table Access Permissions</h3>
+              <p style="font-size:0.82rem; color:var(--text-secondary); margin-top:2px;">Manage API user credentials and restrict access to specific MySQL tables</p>
+            </div>
+            <button class="btn btn-primary" id="open-add-user-btn">➕ Add New User</button>
+          </div>
+          <div class="card-body" style="padding:0;">
+            <div class="data-table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Allowed Tables</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="user-mgmt-tbody">
+                  <tr><td colspan="4"><div class="empty-state"><p>Loading users...</p></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /page-content -->
+  </main>
+</div><!-- /app-layout -->
+
+<!-- ════════════════ MODAL (view-only detail) ════════════════ -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">
+      <h3 id="modal-title">Record Details</h3>
+      <button class="btn-ghost" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════ TOASTS ════════════════ -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="/static/app.js?v=1005"></script>
+</body>
+</html>
