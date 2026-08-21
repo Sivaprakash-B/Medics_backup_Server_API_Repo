@@ -140,6 +140,8 @@ def list_all_tables(
     return {"tables": result}
 
 
+@router.get("/{table_id}")
+@router.get("/{table_id}/data")
 @router.get("/tables/{table_id}/data")
 def get_table_data(
     table_id: int,
@@ -151,7 +153,7 @@ def get_table_data(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Fetch rows by numeric table ID. Real table name is resolved internally."""
+    """Fetch rows by numeric table ID (e.g. /api/v1/14). Real table name is resolved internally."""
     real_table_name = _resolve_id(table_id)
 
     allowed = user.get("allowed_tables", ["*"])

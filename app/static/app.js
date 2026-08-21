@@ -367,7 +367,7 @@ function renderTableDirectory() {
       ? '<span class="badge" style="background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.3);">📊 Report Table</span>'
       : '<span class="badge" style="background:rgba(16,185,129,0.15); color:#34d399; border:1px solid rgba(16,185,129,0.3);">🗂️ Master Table</span>';
 
-    const apiEndpoint = `/api/v1/tables/${t.id}/data`;
+    const apiEndpoint = `/api/v1/${t.id}`;
 
     return `
       <tr>
@@ -602,7 +602,7 @@ function updateApiGenerator() {
   if (skip)   params.push(`skip=${skip}`);
 
   const queryString = params.length > 0 ? `?${params.join('&')}` : '';
-  const endpointPath = `/api/v1/tables/${tableId}/data${queryString}`;
+  const endpointPath = `/api/v1/${tableId}${queryString}`;
   const fullUrl = `${API}${endpointPath}`;
 
   if ($('#generated-api-url')) $('#generated-api-url').value = fullUrl;
