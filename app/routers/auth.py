@@ -20,7 +20,7 @@ import pathlib
 logger = logging.getLogger("audit")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-STORE_FILE = pathlib.Path(__file__).resolve().parent.parent.parent / "users_store.json"
+STORE_FILE = pathlib.Path(__file__).resolve().parent.parent.parent / "users.json"
 
 DEFAULT_USERS = {
     "guest": {"passwords": ["guest", "", "guest123"], "role": "viewer", "allowed_tables": ["*"]},
@@ -146,29 +146,6 @@ def add_user(payload: schemas.AddUserPayload, db: Session = Depends(get_db)):
         "allowed_tables": payload.allowed_tables or ["*"],
     }
     save_user_store(store)
-
-    # Also sync to Database if users table is writable
-    if has_users_table():
-        try:
-            db_user = db.query(models.User).filter(models.User.username == uname).first()
-            if db_user:
-                db_user.hashed_password = hash_password(pwd)
-                db_user.role = payload.role or "viewer"
-                db_user.is_active = 1
-            else:
-                db_user = models.User(
-                    username=uname,
-                    email=f"{uname}@sef.local",
-                    hashed_password=hash_password(pwd),
-                    role=payload.role or "viewer",
-                    is_active=1
-                )
-                db.add(db_user)
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            logger.warning("Could not sync added user to DB table: %s", e)
-
     logger.info("USER ADDED/UPDATED  username=%s  allowed_tables=%s", uname, payload.allowed_tables)
     return {
         "status": "success",
@@ -192,16 +169,6 @@ def delete_user(username: str, db: Session = Depends(get_db)):
     if uname in store:
         del store[uname]
         save_user_store(store)
-
-        if has_users_table():
-            try:
-                db_user = db.query(models.User).filter(models.User.username == uname).first()
-                if db_user:
-                    db.delete(db_user)
-                    db.commit()
-            except Exception as e:
-                db.rollback()
-                logger.warning("Could not delete user from DB table: %s", e)
 
         return {"status": "success", "message": f"User '{uname}' deleted"}
 

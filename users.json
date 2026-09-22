@@ -1,0 +1,52 @@
+{
+  "admin": {
+    "passwords": [
+      "AdminPass123!",
+      "admin"
+    ],
+    "role": "admin",
+    "allowed_tables": [
+      "*"
+    ]
+  },
+  "guest": {
+    "passwords": [
+      "guest",
+      ""
+    ],
+    "role": "viewer",
+    "allowed_tables": [
+      "*"
+    ]
+  },
+  "medics": {
+    "passwords": [
+      "Medics@123",
+      "medics"
+    ],
+    "role": "admin",
+    "allowed_tables": [
+      "*"
+    ]
+  },
+  "finsight": {
+    "passwords": [
+      "finsight",
+      "Finsight@2026"
+    ],
+    "role": "admin",
+    "allowed_tables": [
+      "*"
+    ]
+  },
+  "user1": {
+    "passwords": [
+      "User1Pass123!",
+      "user1"
+    ],
+    "role": "viewer",
+    "allowed_tables": [
+      "*"
+    ]
+  }
+}
