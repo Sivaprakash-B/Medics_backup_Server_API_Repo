@@ -10,29 +10,51 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..auth import verify_password, create_access_token
+from ..auth import verify_password, create_access_token, hash_password
 from ..database import engine, get_db
+
+import json
+import os
+import pathlib
 
 logger = logging.getLogger("audit")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+STORE_FILE = pathlib.Path(__file__).resolve().parent.parent.parent / "users_store.json"
 
-USER_ALLOWED_TABLES = {
-    "guest": ["*"],
-    "admin": ["*"],
-    "medics": ["*"],
-    "user1": ["rpt_surgery", "rpt_patient_details"],
-    "user2": ["rpt_surgery"],
+DEFAULT_USERS = {
+    "guest": {"passwords": ["guest", "", "guest123"], "role": "viewer", "allowed_tables": ["*"]},
+    "admin": {"passwords": ["admin", "AdminPass123!", "admin123", "password", ""], "role": "admin", "allowed_tables": ["*"]},
+    "medics": {"passwords": ["medics", "Medics@123", "medics123"], "role": "admin", "allowed_tables": ["*"]},
+    "user1": {"passwords": ["user1", "User1Pass123!", "user123"], "role": "viewer", "allowed_tables": ["rpt_surgery", "rpt_patient_details"]},
+    "user2": {"passwords": ["user2", "User2Pass123!", "user123"], "role": "viewer", "allowed_tables": ["rpt_surgery"]},
 }
 
-USER_PASSWORDS = {
-    "guest": ["guest", "", "guest123"],
-    "admin": ["admin", "AdminPass123!", "admin123", "password", ""],
-    "medics": ["medics", "Medics@123", "medics123"],
-    "user1": ["user1", "User1Pass123!", "user123"],
-    "user2": ["user2", "User2Pass123!", "user123"],
-}
+def load_user_store() -> dict:
+    """Load users from shared json file, fallback to defaults."""
+    if STORE_FILE.exists():
+        try:
+            with open(STORE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    # Merge with defaults
+                    merged = dict(DEFAULT_USERS)
+                    merged.update(data)
+                    return merged
+        except Exception as e:
+            logger.warning("Failed to read user store file: %s", e)
+    return dict(DEFAULT_USERS)
 
+def save_user_store(store: dict) -> None:
+    """Save users to shared json file across all worker processes."""
+    try:
+        with open(STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(store, f, indent=2)
+    except Exception as e:
+        logger.error("Failed to save user store file: %s", e)
+
+# Initial load
+USER_DATA = load_user_store()
 
 def has_users_table() -> bool:
     """Check if 'users' table exists in the connected database schema."""
@@ -45,48 +67,48 @@ def login(form: schemas.LoginRequest, db: Session = Depends(get_db)):
     """Authenticate with username + password, receive a JWT with table-level permissions."""
     username = (form.username or "guest").strip().lower()
     provided_password = (form.password or "").strip()
-    
-    if not has_users_table():
-        # Validate predefined accounts when database has no writable 'users' table
-        valid_passwords = USER_PASSWORDS.get(username, [username])
+
+    # 1. Check persistent user store first
+    store = load_user_store()
+    if username in store:
+        user_info = store[username]
+        valid_passwords = user_info.get("passwords", [username])
         if isinstance(valid_passwords, str):
             valid_passwords = [valid_passwords]
 
-        # If password is provided and not in valid passwords list (and not matching username)
-        if provided_password and provided_password not in valid_passwords and provided_password != username:
-            logger.warning("LOGIN FAILED  user=%s", username)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-            )
-        
-        allowed_tables = USER_ALLOWED_TABLES.get(username, ["*"])
-        role = "admin" if username in ("admin", "medics") else "viewer"
-        logger.info("LOGIN OK (Read-Only DB)  user=%s  role=%s  allowed_tables=%s", username, role, allowed_tables)
-        token = create_access_token({"sub": username, "role": role, "allowed_tables": allowed_tables})
-        return {"access_token": token, "token_type": "bearer"}
+        # Valid if password matches or matches username
+        is_valid = (
+            (not provided_password and ("" in valid_passwords or "guest" in valid_passwords))
+            or (provided_password in valid_passwords)
+            or (provided_password == username)
+        )
 
-    user = (
-        db.query(models.User)
-        .filter(models.User.username == form.username)
-        .first()
+        if is_valid:
+            allowed_tables = user_info.get("allowed_tables", ["*"])
+            role = user_info.get("role", "admin" if username in ("admin", "medics") else "viewer")
+            logger.info("LOGIN OK (Store)  user=%s  role=%s  allowed_tables=%s", username, role, allowed_tables)
+            token = create_access_token({"sub": username, "role": role, "allowed_tables": allowed_tables})
+            return {"access_token": token, "token_type": "bearer"}
+
+    # 2. Check Database users table if available
+    if has_users_table():
+        user = (
+            db.query(models.User)
+            .filter(models.User.username == form.username)
+            .first()
+        )
+        if user and user.is_active and verify_password(form.password, user.hashed_password):
+            store_user = store.get(user.username.lower(), {})
+            allowed_tables = store_user.get("allowed_tables", ["*"])
+            token = create_access_token({"sub": user.username, "role": user.role, "allowed_tables": allowed_tables})
+            logger.info("LOGIN OK (DB)  user=%s  role=%s  allowed_tables=%s", user.username, user.role, allowed_tables)
+            return {"access_token": token, "token_type": "bearer"}
+
+    logger.warning("LOGIN FAILED  user=%s", form.username)
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Incorrect username or password",
     )
-    if not user or not verify_password(form.password, user.hashed_password):
-        logger.warning("LOGIN FAILED  user=%s", form.username)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-        )
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is disabled",
-        )
-
-    allowed_tables = USER_ALLOWED_TABLES.get(user.username.lower(), ["*"])
-    token = create_access_token({"sub": user.username, "role": user.role, "allowed_tables": allowed_tables})
-    logger.info("LOGIN OK  user=%s  role=%s  allowed_tables=%s", user.username, user.role, allowed_tables)
-    return {"access_token": token, "token_type": "bearer"}
 
 
 @router.get("/guest-token", response_model=schemas.Token)
@@ -99,25 +121,53 @@ def guest_token():
 @router.get("/users-list")
 def list_managed_users():
     """List all accounts and their table access permissions."""
+    store = load_user_store()
     result = []
-    for uname, tables in USER_ALLOWED_TABLES.items():
+    for uname, data in store.items():
         result.append({
             "username": uname,
-            "role": "admin" if uname == "admin" else "viewer",
-            "allowed_tables": tables,
+            "role": data.get("role", "viewer"),
+            "allowed_tables": data.get("allowed_tables", ["*"]),
         })
     return {"users": result}
 
 
 @router.post("/add-user")
-def add_user(payload: schemas.AddUserPayload):
+def add_user(payload: schemas.AddUserPayload, db: Session = Depends(get_db)):
     """Add or update a user with table access permissions dynamically."""
     uname = payload.username.strip().lower()
-    USER_ALLOWED_TABLES[uname] = payload.allowed_tables
-    if payload.password and payload.password.strip():
-        USER_PASSWORDS[uname] = payload.password.strip()
-    elif uname not in USER_PASSWORDS:
-        USER_PASSWORDS[uname] = uname
+    pwd = payload.password.strip() if (payload.password and payload.password.strip()) else uname
+
+    # Save to persistent shared file across all Gunicorn workers
+    store = load_user_store()
+    store[uname] = {
+        "passwords": [pwd],
+        "role": payload.role or "viewer",
+        "allowed_tables": payload.allowed_tables or ["*"],
+    }
+    save_user_store(store)
+
+    # Also sync to Database if users table is writable
+    if has_users_table():
+        try:
+            db_user = db.query(models.User).filter(models.User.username == uname).first()
+            if db_user:
+                db_user.hashed_password = hash_password(pwd)
+                db_user.role = payload.role or "viewer"
+                db_user.is_active = 1
+            else:
+                db_user = models.User(
+                    username=uname,
+                    email=f"{uname}@sef.local",
+                    hashed_password=hash_password(pwd),
+                    role=payload.role or "viewer",
+                    is_active=1
+                )
+                db.add(db_user)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning("Could not sync added user to DB table: %s", e)
 
     logger.info("USER ADDED/UPDATED  username=%s  allowed_tables=%s", uname, payload.allowed_tables)
     return {
@@ -132,13 +182,27 @@ def add_user(payload: schemas.AddUserPayload):
 
 
 @router.delete("/delete-user/{username}")
-def delete_user(username: str):
+def delete_user(username: str, db: Session = Depends(get_db)):
     """Delete a user account."""
     uname = username.strip().lower()
     if uname in ("admin", "guest"):
         raise HTTPException(status_code=400, detail="Cannot delete default admin or guest accounts")
-    if uname in USER_ALLOWED_TABLES:
-        del USER_ALLOWED_TABLES[uname]
-        USER_PASSWORDS.pop(uname, None)
+
+    store = load_user_store()
+    if uname in store:
+        del store[uname]
+        save_user_store(store)
+
+        if has_users_table():
+            try:
+                db_user = db.query(models.User).filter(models.User.username == uname).first()
+                if db_user:
+                    db.delete(db_user)
+                    db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.warning("Could not delete user from DB table: %s", e)
+
         return {"status": "success", "message": f"User '{uname}' deleted"}
+
     raise HTTPException(status_code=404, detail=f"User '{uname}' not found")
