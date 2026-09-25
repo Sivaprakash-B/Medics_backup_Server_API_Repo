@@ -177,7 +177,10 @@ def get_table_data(
         cleaned_where = where.strip()
         if re.search(r";|\b(UPDATE|DELETE|INSERT|DROP|ALTER|CREATE|GRANT|TRUNCATE)\b", cleaned_where, re.IGNORECASE):
             raise HTTPException(status_code=400, detail="Invalid characters or non-read-only commands in WHERE clause")
-        query = query.where(text(cleaned_where))
+        # Escape % signs so SQLAlchemy doesn't treat them as parameter placeholders.
+        # e.g. DATE_FORMAT(CURDATE(),'%Y-%m-01') → safe to pass through text()
+        safe_where = cleaned_where.replace("%", "%%")
+        query = query.where(text(safe_where))
 
     if order_by:
         cleaned_order = order_by.strip()
