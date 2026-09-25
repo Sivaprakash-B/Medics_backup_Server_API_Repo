@@ -93,7 +93,8 @@ def list_all_tables(
     inspector = inspect(engine)
     all_real_names = inspector.get_table_names()
 
-    allowed = user.get("allowed_tables", ["*"])
+    raw_allowed = user.get("allowed_tables", ["*"])
+    allowed = [str(t) for t in raw_allowed] if isinstance(raw_allowed, list) else ["*"]
 
     col_map: dict[str, list] = {}
     if not settings.use_sqlite:
@@ -156,7 +157,8 @@ def get_table_data(
     """Fetch rows by numeric table ID (e.g. /api/v1/14). Real table name is resolved internally."""
     real_table_name = _resolve_id(table_id)
 
-    allowed = user.get("allowed_tables", ["*"])
+    raw_allowed = user.get("allowed_tables", ["*"])
+    allowed = [str(t) for t in raw_allowed] if isinstance(raw_allowed, list) else ["*"]
     if "*" not in allowed:
         if str(table_id) not in allowed and real_table_name not in allowed:
             raise HTTPException(status_code=403, detail="Access denied to this table")

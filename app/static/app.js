@@ -591,23 +591,25 @@ function updateApiGenerator() {
   syncTableSelectors(tableId);
 
   const search = $('#api-search')?.value?.trim();
-  const where = $('#api-where')?.value?.trim();
-  const limit = $('#api-limit')?.value?.trim();
-  const skip = $('#api-skip')?.value?.trim();
+  const where  = $('#api-where')?.value?.trim();
+  const limit  = $('#api-limit')?.value?.trim();
+  const skip   = $('#api-skip')?.value?.trim();
 
   let params = [];
   if (search) params.push(`search=${encodeURIComponent(search)}`);
-  if (where)  params.push(`where=${encodeURIComponent(where)}`);
-  if (limit)  params.push(`limit=${limit}`);
-  if (skip)   params.push(`skip=${skip}`);
+  if (where)  params.push(`where=${encodeURIComponent(where)}`);   // encode SQL conditions properly
+  if (limit)  params.push(`limit=${encodeURIComponent(limit)}`);
+  if (skip)   params.push(`skip=${encodeURIComponent(skip)}`);
 
   const queryString = params.length > 0 ? `?${params.join('&')}` : '';
-  const endpointPath = `/api/v1/${tableId}${queryString}`;
+  // ✅ Fixed: correct path is /api/v1/tables/{id}/data
+  const endpointPath = `/api/v1/tables/${tableId}/data${queryString}`;
   const fullUrl = `${API}${endpointPath}`;
 
   if ($('#generated-api-url')) $('#generated-api-url').value = fullUrl;
   generateCodeSnippet(fullUrl, endpointPath);
 }
+
 
 function generateCodeSnippet(fullUrl, endpointPath) {
   const tokenHeader = state.token ? `Authorization: Bearer ${state.token}` : '';
