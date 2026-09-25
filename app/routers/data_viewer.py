@@ -64,6 +64,15 @@ class QueryRequest(BaseModel):
     sql: str
 
 
+class TableFilterRequest(BaseModel):
+    """Body for POST /api/v1/tables/{id}/query — filters stay off the URL."""
+    where: Optional[str] = None
+    search: Optional[str] = None
+    order_by: Optional[str] = None
+    skip: int = 0
+    limit: int = 50
+
+
 def reflect_table(table_name: str) -> Table:
     """Reflect table schema dynamically from engine."""
     inspector = inspect(engine)
@@ -238,7 +247,32 @@ def get_table_data(
     }
 
 
-@router.post("/query")
+@router.post("/tables/{table_id}/query")
+def post_table_data(
+    table_id: int,
+    payload: TableFilterRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    POST version of table data fetch — all filters go in the JSON body.
+    URL stays clean: POST /api/v1/tables/13/query
+    Body: { "where": "DATE(rs_sd_start_date) >= ...", "limit": 50 }
+    """
+    # Reuse the GET handler logic by calling it with body values
+    return get_table_data(
+        table_id=table_id,
+        skip=payload.skip,
+        limit=min(payload.limit, 5000),
+        search=payload.search,
+        where=payload.where,
+        order_by=payload.order_by,
+        db=db,
+        user=user,
+    )
+
+
+
 def execute_sql_query(
     payload: QueryRequest,
     db: Session = Depends(get_db),

@@ -590,37 +590,71 @@ function updateApiGenerator() {
 
   syncTableSelectors(tableId);
 
-  const search = $('#api-search')?.value?.trim();
-  const where  = $('#api-where')?.value?.trim();
-  const limit  = $('#api-limit')?.value?.trim();
-  const skip   = $('#api-skip')?.value?.trim();
+  const search  = $('#api-search')?.value?.trim();
+  const where   = $('#api-where')?.value?.trim();
+  const limit   = $('#api-limit')?.value?.trim();
+  const skip    = $('#api-skip')?.value?.trim();
 
-  let params = [];
-  if (search) params.push(`search=${encodeURIComponent(search)}`);
-  if (where)  params.push(`where=${encodeURIComponent(where)}`);   // encode SQL conditions properly
-  if (limit)  params.push(`limit=${encodeURIComponent(limit)}`);
-  if (skip)   params.push(`skip=${encodeURIComponent(skip)}`);
+  const hasFilter = !!(search || where);
 
-  const queryString = params.length > 0 ? `?${params.join('&')}` : '';
-  // ✅ Fixed: correct path is /api/v1/tables/{id}/data
-  const endpointPath = `/api/v1/tables/${tableId}/data${queryString}`;
-  const fullUrl = `${API}${endpointPath}`;
+  let endpointPath, fullUrl, requestBody = null;
+
+  if (hasFilter) {
+    // POST mode — filters go in the JSON body, URL stays clean
+    endpointPath = `/api/v1/tables/${tableId}/query`;
+    fullUrl = `${API}${endpointPath}`;
+    requestBody = {};
+    if (where)  requestBody.where    = where;
+    if (search) requestBody.search   = search;
+    if (limit)  requestBody.limit    = parseInt(limit) || 50;
+    if (skip)   requestBody.skip     = parseInt(skip)  || 0;
+  } else {
+    // GET mode — no filters, simple clean URL
+    let params = [];
+    if (limit) params.push(`limit=${encodeURIComponent(limit)}`);
+    if (skip)  params.push(`skip=${encodeURIComponent(skip)}`);
+    const queryString = params.length > 0 ? `?${params.join('&')}` : '';
+    endpointPath = `/api/v1/tables/${tableId}/data${queryString}`;
+    fullUrl = `${API}${endpointPath}`;
+  }
+
+  // Store for test button
+  state._apiRequestBody = requestBody;
+  state._apiIsPost = hasFilter;
 
   if ($('#generated-api-url')) $('#generated-api-url').value = fullUrl;
-  generateCodeSnippet(fullUrl, endpointPath);
+  generateCodeSnippet(fullUrl, endpointPath, requestBody);
 }
 
 
-function generateCodeSnippet(fullUrl, endpointPath) {
+function generateCodeSnippet(fullUrl, endpointPath, body = null) {
   const tokenHeader = state.token ? `Authorization: Bearer ${state.token}` : '';
   const lang = state.codeLang;
+  const isPost = !!body;
+  const method = isPost ? 'POST' : 'GET';
+  const bodyStr = body ? JSON.stringify(body, null, 2) : null;
 
   let code = '';
   if (lang === 'curl') {
-    code = `curl -X GET "${fullUrl}" \\
-  -H "Accept: application/json"${tokenHeader ? ` \\\n  -H "${tokenHeader}"` : ''}`;
+    code = isPost
+      ? `curl -X POST "${fullUrl}" \\\n  -H "Content-Type: application/json" \\\n  -H "Accept: application/json"${tokenHeader ? ` \\\n  -H "${tokenHeader}"` : ''} \\\n  -d '${JSON.stringify(body)}'`
+      : `curl -X GET "${fullUrl}" \\\n  -H "Accept: application/json"${tokenHeader ? ` \\\n  -H "${tokenHeader}"` : ''}`;
   } else if (lang === 'python') {
-    code = `import requests
+    code = isPost
+      ? `import requests
+
+url = "${fullUrl}"
+headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+${tokenHeader ? `    "Authorization": "Bearer ${state.token}"\n` : ''}}
+body = ${bodyStr}
+
+response = requests.post(url, json=body, headers=headers)
+data = response.json()
+print("Total records:", data.get("total"))
+print("Rows:", data.get("data"))`
+      : `import requests
 
 url = "${fullUrl}"
 headers = {
@@ -632,7 +666,24 @@ data = response.json()
 print("Total records:", data.get("total"))
 print("Rows:", data.get("data"))`;
   } else if (lang === 'js') {
-    code = `const url = "${fullUrl}";
+    code = isPost
+      ? `const url = "${fullUrl}";
+const body = ${bodyStr};
+
+fetch(url, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+${tokenHeader ? `    "Authorization": "Bearer ${state.token}"\n` : ''}  },
+  body: JSON.stringify(body)
+})
+  .then(res => res.json())
+  .then(data => {
+    console.log("Total:", data.total);
+    console.log("Rows:", data.data);
+  });`
+      : `const url = "${fullUrl}";
 
 fetch(url, {
   method: "GET",
@@ -645,7 +696,23 @@ ${tokenHeader ? `    "Authorization": "Bearer ${state.token}"\n` : ''}  }
     console.log("Table records:", data.data);
   });`;
   } else if (lang === 'php') {
-    code = `<?php
+    code = isPost
+      ? `<?php
+$url = "${fullUrl}";
+$body = '${JSON.stringify(body)}';
+$opts = [
+    "http" => [
+        "method"  => "POST",
+        "header"  => "Content-Type: application/json\\r\\nAccept: application/json\\r\\n"${tokenHeader ? ` . "Authorization: Bearer ${state.token}\\r\\n"` : ''},
+        "content" => $body
+    ]
+];
+$context = stream_context_create($opts);
+$response = file_get_contents($url, false, $context);
+$data = json_decode($response, true);
+print_r($data["data"]);
+?>`
+      : `<?php
 $url = "${fullUrl}";
 $opts = [
     "http" => [
@@ -656,7 +723,6 @@ $opts = [
 $context = stream_context_create($opts);
 $response = file_get_contents($url, false, $context);
 $data = json_decode($response, true);
-
 print_r($data["data"]);
 ?>`;
   }
@@ -672,7 +738,17 @@ async function testGeneratedApi() {
   $('#test-api-btn').innerHTML = '<span class="spinner"></span> Testing...';
 
   const start = performance.now();
-  const { ok, status, data } = await api(url);
+  let res;
+  if (state._apiIsPost && state._apiRequestBody) {
+    // POST mode — send filters as JSON body
+    res = await api(url, {
+      method: 'POST',
+      body: JSON.stringify(state._apiRequestBody),
+    });
+  } else {
+    res = await api(url);
+  }
+  const { ok, status, data } = res;
   const ms = Math.round(performance.now() - start);
 
   const statusBadge = $('#api-response-status');
