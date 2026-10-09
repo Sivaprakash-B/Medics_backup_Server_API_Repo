@@ -3,9 +3,15 @@
    ═══════════════════════════════════════════════════════════════ */
 
 const API = window.location.origin;
+// Clear legacy persistent localStorage tokens so browser open always requires login
+try {
+  localStorage.removeItem('sef_token');
+  localStorage.removeItem('sef_user');
+} catch (_) {}
+
 const state = {
-  token: localStorage.getItem('sef_token') || null,
-  user: JSON.parse(localStorage.getItem('sef_user') || 'null'),
+  token: sessionStorage.getItem('sef_token') || null,
+  user: JSON.parse(sessionStorage.getItem('sef_user') || 'null'),
   currentPage: 'overview',
   tablesList: [],       // [{id, column_count, columns}]
   selectedTableId: null, // numeric ID only — no table name stored
@@ -28,8 +34,6 @@ function headers() {
   return h;
 }
 
-let isAuthRefreshing = false;
-
 async function api(path, opts = {}) {
   const url = path.startsWith('http') ? path : `${API}${path}`;
   let res = await fetch(url, { headers: headers(), ...opts }).catch(err => {
@@ -37,40 +41,13 @@ async function api(path, opts = {}) {
     return { ok: false, status: 0, json: async () => null };
   });
 
-  if (res.status === 401 && !path.includes('/auth/token') && !path.includes('/auth/guest-token')) {
-    if (!isAuthRefreshing) {
-      isAuthRefreshing = true;
-      console.warn('Auth token expired. Auto-authenticating guest session...');
-      const renewed = await autoGuestAuth();
-      isAuthRefreshing = false;
-      if (renewed) {
-        res = await fetch(url, { headers: headers(), ...opts }).catch(() => res);
-      }
-    }
+  if (res.status === 401 && !path.includes('/auth/token')) {
+    logout();
+    toast('Session expired or unauthorized. Please log in.', 'error');
   }
 
   const data = await res.json().catch(() => null);
   return { ok: res.ok, status: res.status, data };
-}
-
-async function autoGuestAuth() {
-  try {
-    const res = await fetch(`${API}/auth/guest-token`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.access_token) {
-        state.token = data.access_token;
-        state.user = { username: 'guest', role: 'viewer' };
-        localStorage.setItem('sef_token', state.token);
-        localStorage.setItem('sef_user', JSON.stringify(state.user));
-        renderUserInfo();
-        return true;
-      }
-    }
-  } catch (e) {
-    console.error('Auto guest auth error:', e);
-  }
-  return false;
 }
 
 function toast(msg, type = 'info') {
@@ -98,12 +75,20 @@ function formatDate(iso) {
 
 /* ── Auth ─────────────────────────────────────────────────── */
 async function login() {
-  const username = $('#login-username')?.value?.trim() || 'guest';
-  const password = $('#login-password')?.value || 'guest';
+  const username = $('#login-username')?.value?.trim();
+  const password = $('#login-password')?.value;
+
+  if (!username || !password) {
+    if ($('#login-error')) {
+      $('#login-error').textContent = 'Please enter your username and password.';
+      $('#login-error').classList.add('visible');
+    }
+    return;
+  }
 
   if ($('#login-btn')) {
     $('#login-btn').disabled = true;
-    $('#login-btn').innerHTML = '<span class="spinner"></span>';
+    $('#login-btn').innerHTML = '<span class="spinner"></span> Logging in...';
   }
   if ($('#login-error')) $('#login-error').classList.remove('visible');
 
@@ -119,18 +104,18 @@ async function login() {
       state.user = { username: payload.sub, role: payload.role };
     } catch { state.user = { username, role: 'viewer' }; }
 
-    localStorage.setItem('sef_token', state.token);
-    localStorage.setItem('sef_user', JSON.stringify(state.user));
+    sessionStorage.setItem('sef_token', state.token);
+    sessionStorage.setItem('sef_user', JSON.stringify(state.user));
     await enterDashboard();
   } else {
     if ($('#login-error')) {
-      $('#login-error').textContent = data?.detail || 'Login failed';
+      $('#login-error').textContent = data?.detail || 'Invalid username or password';
       $('#login-error').classList.add('visible');
     }
   }
   if ($('#login-btn')) {
     $('#login-btn').disabled = false;
-    $('#login-btn').textContent = 'Explore Database & Query Engine';
+    $('#login-btn').textContent = '🚀 Enter Dashboard & Query Console';
   }
 }
 
@@ -143,6 +128,8 @@ async function quickLogin(username, password) {
 function logout() {
   state.token = null;
   state.user = null;
+  sessionStorage.removeItem('sef_token');
+  sessionStorage.removeItem('sef_user');
   localStorage.removeItem('sef_token');
   localStorage.removeItem('sef_user');
   $('#login-screen')?.classList.remove('hidden');
@@ -152,11 +139,7 @@ function logout() {
 async function enterDashboard() {
   $('#login-screen')?.classList.add('hidden');
   renderUserInfo();
-  const loaded = await loadTablesList();
-  if (!loaded && !state.token) {
-    const ok = await autoGuestAuth();
-    if (ok) await loadTablesList();
-  }
+  await loadTablesList();
   navigate(state.currentPage || 'overview');
 }
 
@@ -1133,10 +1116,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === e.currentTarget) closeModal();
   });
 
-  // Auto-login or guest login if token exists
+  // Automatic login disabled — always show login screen if no active tab session
   if (state.token && state.user) {
     enterDashboard();
   } else {
-    login();
+    $('#login-screen')?.classList.remove('hidden');
   }
 });
