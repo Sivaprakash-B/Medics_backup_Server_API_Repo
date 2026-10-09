@@ -153,6 +153,7 @@ def list_all_tables(
 @router.get("/{table_id}")
 @router.get("/{table_id}/data")
 @router.get("/tables/{table_id}/data")
+@router.get("/tables/{table_id}/query")
 def get_table_data(
     table_id: int,
     skip: int = Query(0, ge=0),

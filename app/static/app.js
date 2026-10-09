@@ -595,35 +595,22 @@ function updateApiGenerator() {
   const limit   = $('#api-limit')?.value?.trim();
   const skip    = $('#api-skip')?.value?.trim();
 
-  const hasFilter = !!(search || where);
+  let params = [];
+  if (search) params.push(`search=${encodeURIComponent(search)}`);
+  if (where)  params.push(`where=${encodeURIComponent(where)}`);
+  if (limit)  params.push(`limit=${encodeURIComponent(limit)}`);
+  if (skip)   params.push(`skip=${encodeURIComponent(skip)}`);
 
-  let endpointPath, fullUrl, requestBody = null;
+  const queryString = params.length > 0 ? `?${params.join('&')}` : '';
+  const endpointPath = `/api/v1/tables/${tableId}/data${queryString}`;
+  const fullUrl = `${API}${endpointPath}`;
 
-  if (hasFilter) {
-    // POST mode — filters go in the JSON body, URL stays clean
-    endpointPath = `/api/v1/tables/${tableId}/query`;
-    fullUrl = `${API}${endpointPath}`;
-    requestBody = {};
-    if (where)  requestBody.where    = where;
-    if (search) requestBody.search   = search;
-    if (limit)  requestBody.limit    = parseInt(limit) || 50;
-    if (skip)   requestBody.skip     = parseInt(skip)  || 0;
-  } else {
-    // GET mode — no filters, simple clean URL
-    let params = [];
-    if (limit) params.push(`limit=${encodeURIComponent(limit)}`);
-    if (skip)  params.push(`skip=${encodeURIComponent(skip)}`);
-    const queryString = params.length > 0 ? `?${params.join('&')}` : '';
-    endpointPath = `/api/v1/tables/${tableId}/data${queryString}`;
-    fullUrl = `${API}${endpointPath}`;
-  }
-
-  // Store for test button
-  state._apiRequestBody = requestBody;
-  state._apiIsPost = hasFilter;
+  // Store for test button (GET mode)
+  state._apiRequestBody = null;
+  state._apiIsPost = false;
 
   if ($('#generated-api-url')) $('#generated-api-url').value = fullUrl;
-  generateCodeSnippet(fullUrl, endpointPath, requestBody);
+  generateCodeSnippet(fullUrl, endpointPath);
 }
 
 
