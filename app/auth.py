@@ -30,10 +30,12 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ── JWT helpers ──────────────────────────────────────────────
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.access_token_expire_minutes
-    )
-    to_encode.update({"exp": expire})
+    if settings.access_token_expire_minutes > 0:
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=settings.access_token_expire_minutes
+        )
+        to_encode.update({"exp": expire})
+    # When access_token_expire_minutes is 0, no "exp" claim → token never expires
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 
