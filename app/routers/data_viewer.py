@@ -70,7 +70,7 @@ class TableFilterRequest(BaseModel):
     search: Optional[str] = None
     order_by: Optional[str] = None
     skip: int = 0
-    limit: int = 50
+    limit: Optional[int] = None
 
 
 def reflect_table(table_name: str) -> Table:
@@ -156,7 +156,7 @@ def list_all_tables(
 def get_table_data(
     table_id: int,
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=5000),
+    limit: Optional[int] = Query(None, ge=1),
     search: Optional[str] = None,
     where: Optional[str] = None,
     order_by: Optional[str] = None,
@@ -184,12 +184,12 @@ def get_table_data(
 
     if where:
         cleaned_where = where.strip()
+        # Strip leading WHERE keyword if user included it — .where() adds it
+        if cleaned_where.upper().startswith("WHERE "):
+            cleaned_where = cleaned_where[6:].strip()
         if re.search(r";|\b(UPDATE|DELETE|INSERT|DROP|ALTER|CREATE|GRANT|TRUNCATE)\b", cleaned_where, re.IGNORECASE):
             raise HTTPException(status_code=400, detail="Invalid characters or non-read-only commands in WHERE clause")
-        # Escape % signs so SQLAlchemy doesn't treat them as parameter placeholders.
-        # e.g. DATE_FORMAT(CURDATE(),'%Y-%m-01') → safe to pass through text()
-        safe_where = cleaned_where.replace("%", "%%")
-        query = query.where(text(safe_where))
+        query = query.where(text(cleaned_where))
 
     if order_by:
         cleaned_order = order_by.strip()
@@ -217,7 +217,9 @@ def get_table_data(
             logger.error("Error executing count query: %s", e)
             total_records = 0
 
-    query = query.offset(skip).limit(limit)
+    query = query.offset(skip)
+    if limit is not None:
+        query = query.limit(limit)
 
     try:
         rows = db.execute(query).mappings().all()
@@ -242,7 +244,7 @@ def get_table_data(
         "columns": columns,
         "total": total_records,
         "skip": skip,
-        "limit": limit,
+        "limit": limit if limit is not None else "all",
         "data": data,
     }
 
@@ -263,7 +265,7 @@ def post_table_data(
     return get_table_data(
         table_id=table_id,
         skip=payload.skip,
-        limit=min(payload.limit, 5000),
+        limit=payload.limit,
         search=payload.search,
         where=payload.where,
         order_by=payload.order_by,
