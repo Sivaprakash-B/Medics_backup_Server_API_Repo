@@ -179,6 +179,7 @@ function navigate(page) {
     'api-builder': 'REST API Endpoint Generator & Code',
     schema: 'Schema Visualizer',
     users: 'User & Permission Manager',
+    'analytics-op-visits': 'OP Visits — Month-to-Date Analytics',
   };
   if ($('#topbar-title')) $('#topbar-title').textContent = titles[page] || 'Dashboard';
 
@@ -191,6 +192,7 @@ function navigate(page) {
   if (page === 'api-builder') updateApiGenerator();
   if (page === 'schema') loadSchema();
   if (page === 'users') loadUsersManagement();
+  if (page === 'analytics-op-visits') loadOpVisitsMtd();
 }
 
 /* ── Tables & Stats ───────────────────────────────────────── */
@@ -1031,7 +1033,135 @@ async function deleteUserAccount(username) {
 function openModal()  { $('#modal-overlay').classList.add('visible'); }
 function closeModal() { $('#modal-overlay').classList.remove('visible'); }
 
+/* ══ OP Visits MTD Analytics ══════════════════════════════════════════════ */
+async function loadOpVisitsMtd() {
+  const chartContainer = $('#op-chart-container');
+  const tbody = $('#op-visits-tbody');
+
+  if (chartContainer) {
+    chartContainer.innerHTML = '<div class="empty-state"><span class="spinner" style="width:28px;height:28px;border-width:3px;margin-bottom:12px;"></span><p>Fetching data…</p></div>';
+  }
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><span class="spinner" style="width:22px;height:22px;border-width:3px;"></span></div></td></tr>';
+  }
+
+  const { ok, data } = await api('/api/v1/analytics/op-visits-mtd');
+
+  if (!ok) {
+    const msg = data?.detail || 'Failed to load OP Visits analytics';
+    if (chartContainer) chartContainer.innerHTML = `<div class="empty-state" style="color:var(--danger);"><div class="empty-icon">⚠️</div><p>${escapeHtml(msg)}</p></div>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state" style="color:var(--danger);"><p>${escapeHtml(msg)}</p></div></td></tr>`;
+    toast(msg, 'error');
+    return;
+  }
+
+  const rows = data.data || [];
+  const totalVisits = data.total_visits || 0;
+  const entityCount = data.entity_count || 0;
+
+  // Metric cards
+  if ($('#op-total-visits')) $('#op-total-visits').textContent = totalVisits.toLocaleString();
+  if ($('#op-entity-count')) $('#op-entity-count').textContent = entityCount;
+  if (rows.length > 0) {
+    const top = rows[0];
+    if ($('#op-top-entity')) $('#op-top-entity').textContent = top.entity;
+    if ($('#op-top-entity-count')) $('#op-top-entity-count').textContent = `${top.visit_count.toLocaleString()} visits (${top.percentage}%)`;
+  }
+
+  // Period label
+  const now = new Date();
+  const monthName = now.toLocaleString('en-US', { month: 'long' });
+  const year = now.getFullYear();
+  if ($('#op-period')) $('#op-period').textContent = `${monthName} ${year}`;
+  if ($('#op-report-badge')) $('#op-report-badge').textContent = `${entityCount} entities • ${totalVisits.toLocaleString()} visits`;
+  if ($('#op-table-count-badge')) $('#op-table-count-badge').textContent = `${entityCount} entities`;
+
+  renderOpVisitsChart(rows);
+  renderOpVisitsTable(rows);
+}
+
+function renderOpVisitsChart(rows) {
+  const container = $('#op-chart-container');
+  if (!container || rows.length === 0) {
+    if (container) container.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>No data available for this period.</p></div>';
+    return;
+  }
+
+  const maxVisits = rows[0].visit_count;
+  const PALETTE = [
+    '#818cf8','#a78bfa','#34d399','#fbbf24','#60a5fa','#f472b6',
+    '#fb923c','#38bdf8','#c084fc','#4ade80','#facc15','#e879f9',
+  ];
+
+  const barsHtml = rows.map((row, i) => {
+    const barPct = maxVisits > 0 ? ((row.visit_count / maxVisits) * 100).toFixed(1) : 0;
+    const color = PALETTE[i % PALETTE.length];
+    const shortName = row.entity.length > 28 ? row.entity.slice(0, 25) + '…' : row.entity;
+    return `
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
+        <div style="min-width:180px; max-width:200px; font-size:0.82rem; font-weight:600; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(row.entity)}">${escapeHtml(shortName)}</div>
+        <div style="flex:1; background:rgba(255,255,255,0.05); border-radius:6px; height:20px; position:relative; overflow:hidden;">
+          <div style="
+            position:absolute; left:0; top:0; height:100%;
+            width:${barPct}%;
+            background:linear-gradient(90deg, ${color}CC, ${color});
+            border-radius:6px;
+            transition:width 0.6s cubic-bezier(.4,0,.2,1);
+            box-shadow:0 0 8px ${color}55;
+          "></div>
+        </div>
+        <div style="min-width:70px; text-align:right; font-family:var(--font-mono); font-size:0.85rem; font-weight:700; color:${color};">${row.visit_count.toLocaleString()}</div>
+        <div style="min-width:48px; text-align:right; font-size:0.78rem; color:var(--text-secondary);">${row.percentage}%</div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `<div style="padding:4px 8px;">${barsHtml}</div>`;
+}
+
+function renderOpVisitsTable(rows) {
+  const tbody = $('#op-visits-tbody');
+  if (!tbody) return;
+
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📭</div><p>No visits found for the current month-to-date period.</p></div></td></tr>';
+    return;
+  }
+
+  const maxVisits = rows[0].visit_count;
+  const RANK_ICONS = ['🥇', '🥈', '🥉'];
+
+  tbody.innerHTML = rows.map((row, i) => {
+    const rankDisplay = i < 3
+      ? `<span style="font-size:1.2rem;">${RANK_ICONS[i]}</span>`
+      : `<span class="badge" style="background:rgba(99,102,241,0.15); color:#818cf8; border:1px solid rgba(99,102,241,0.3); font-family:var(--font-mono); min-width:28px; justify-content:center;">#${i + 1}</span>`;
+
+    const barPct = maxVisits > 0 ? ((row.visit_count / maxVisits) * 100).toFixed(0) : 0;
+    const hue = 260 - (i * 12);
+    const color = `hsl(${Math.max(hue, 160)}, 70%, 65%)`;
+
+    return `
+      <tr>
+        <td style="text-align:center;">${rankDisplay}</td>
+        <td style="font-weight:600; font-family:var(--font-mono); color:var(--text-primary);">${escapeHtml(row.entity)}</td>
+        <td style="font-family:var(--font-mono); font-weight:700; color:var(--accent-hover); font-size:0.95rem;">${row.visit_count.toLocaleString()}</td>
+        <td>
+          <span class="badge" style="background:rgba(129,140,248,0.15); color:#a5b4fc; border:1px solid rgba(129,140,248,0.3); font-family:var(--font-mono);">
+            ${row.percentage}%
+          </span>
+        </td>
+        <td>
+          <div style="background:rgba(255,255,255,0.06); border-radius:4px; height:10px; overflow:hidden;">
+            <div style="height:100%; width:${barPct}%; background:${color}; border-radius:4px; box-shadow:0 0 6px ${color}66;"></div>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
 /* ── Init ─────────────────────────────────────────────────── */
+
 document.addEventListener('DOMContentLoaded', () => {
   // Nav
   $$('.nav-item').forEach(el => {

@@ -11,7 +11,7 @@ import re
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import MetaData, Table, select, func, text, or_, cast, String, inspect
+from sqlalchemy import MetaData, Table, select, func, text, literal_column, or_, cast, String, inspect
 from sqlalchemy.orm import Session
 
 from ..database import engine, get_db
@@ -71,6 +71,12 @@ class TableFilterRequest(BaseModel):
     order_by: Optional[str] = None
     skip: int = 0
     limit: Optional[int] = None
+
+
+class TableSummaryRequest(BaseModel):
+    """Body for POST /api/v1/tables/{id}/summary — returns counts, not rows."""
+    where: Optional[str] = None
+    group_by: Optional[str] = None   # e.g. "status" or "DATE(rs_sd_start_date)"
 
 
 def reflect_table(table_name: str) -> Table:
@@ -184,12 +190,7 @@ def get_table_data(
             query = query.where(or_(*conditions))
 
     if where:
-        cleaned_where = where.strip()
-        # Strip leading WHERE keyword if user included it — .where() adds it
-        if cleaned_where.upper().startswith("WHERE "):
-            cleaned_where = cleaned_where[6:].strip()
-        if re.search(r";|\b(UPDATE|DELETE|INSERT|DROP|ALTER|CREATE|GRANT|TRUNCATE)\b", cleaned_where, re.IGNORECASE):
-            raise HTTPException(status_code=400, detail="Invalid characters or non-read-only commands in WHERE clause")
+        cleaned_where = _clean_where(where)
         query = query.where(text(cleaned_where))
 
     if order_by:
@@ -274,6 +275,132 @@ def post_table_data(
         user=user,
     )
 
+
+
+# ---------------------------------------------------------------------------
+# Helper: validate & clean a WHERE clause string
+# ---------------------------------------------------------------------------
+def _clean_where(where: str) -> str:
+    """Strip optional leading WHERE keyword and reject unsafe SQL."""
+    cleaned = where.strip()
+    if cleaned.upper().startswith("WHERE "):
+        cleaned = cleaned[6:].strip()
+    if re.search(r";|\b(UPDATE|DELETE|INSERT|DROP|ALTER|CREATE|GRANT|TRUNCATE)\b", cleaned, re.IGNORECASE):
+        raise HTTPException(status_code=400, detail="Invalid characters or non-read-only commands in WHERE clause")
+    return cleaned
+
+
+# ---------------------------------------------------------------------------
+# Summary endpoints  —  counts only, no raw rows
+# ---------------------------------------------------------------------------
+
+@router.get("/tables/{table_id}/summary")
+def get_table_summary(
+    table_id: int,
+    where: Optional[str] = Query(None),
+    group_by: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Return a count summary for the table (no raw rows).
+
+    - **where**    – optional filter expression (same syntax as the data endpoint)
+    - **group_by** – optional column / expression to group counts by
+
+    ### Examples
+    ```
+    # Plain total for current month
+    GET /api/v1/tables/14/summary
+        ?where=rs_sd_start_date >= DATE_FORMAT(CURDATE(),'%Y-%m-01') AND rs_sd_start_date < CURDATE()
+
+    # Grouped by status
+    GET /api/v1/tables/14/summary
+        ?where=rs_sd_start_date >= DATE_FORMAT(CURDATE(),'%Y-%m-01')
+        &group_by=status
+    ```
+    """
+    real_table_name = _resolve_id(table_id)
+
+    raw_allowed = user.get("allowed_tables", ["*"])
+    allowed = [str(t) for t in raw_allowed] if isinstance(raw_allowed, list) else ["*"]
+    if "*" not in allowed:
+        if str(table_id) not in allowed and real_table_name not in allowed:
+            raise HTTPException(status_code=403, detail="Access denied to this table")
+
+    table = reflect_table(real_table_name)
+
+    # ── Validate group_by ────────────────────────────────────────────────────
+    if group_by:
+        cleaned_group = group_by.strip()
+        if re.search(r";|\b(UPDATE|DELETE|INSERT|DROP|ALTER|CREATE|GRANT|TRUNCATE)\b", cleaned_group, re.IGNORECASE):
+            raise HTTPException(status_code=400, detail="Invalid group_by expression")
+    else:
+        cleaned_group = None
+
+    # ── Build query ──────────────────────────────────────────────────────────
+    if cleaned_group:
+        # literal_column() supports .label() unlike text(); needed for SQLAlchemy 2.x
+        grp_col = literal_column(cleaned_group)
+        query = select(
+            grp_col.label("group_value"),
+            func.count().label("count"),
+        ).select_from(table)
+    else:
+        query = select(func.count().label("count")).select_from(table)
+
+    if where:
+        cleaned_where = _clean_where(where)
+        query = query.where(text(cleaned_where))
+
+    if cleaned_group:
+        query = query.group_by(literal_column(cleaned_group)).order_by(literal_column(cleaned_group).asc())
+
+    # ── Execute ──────────────────────────────────────────────────────────────
+    try:
+        rows = db.execute(query).mappings().all()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Summary query error: {str(e)}")
+
+    if cleaned_group:
+        breakdown = [{"group": r["group_value"], "count": r["count"]} for r in rows]
+        total = sum(b["count"] for b in breakdown)
+        return {
+            "table_id": table_id,
+            "where": where or None,
+            "group_by": cleaned_group,
+            "total": total,
+            "breakdown": breakdown,
+        }
+    else:
+        total = rows[0]["count"] if rows else 0
+        return {
+            "table_id": table_id,
+            "where": where or None,
+            "group_by": None,
+            "total": total,
+        }
+
+
+@router.post("/tables/{table_id}/summary")
+def post_table_summary(
+    table_id: int,
+    payload: TableSummaryRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    POST version of the summary endpoint (filters in JSON body instead of query params).
+
+    Body: `{ "where": "rs_sd_start_date >= DATE_FORMAT(CURDATE(),'%Y-%m-01') AND rs_sd_start_date < CURDATE()", "group_by": "status" }`
+    """
+    return get_table_summary(
+        table_id=table_id,
+        where=payload.where,
+        group_by=payload.group_by,
+        db=db,
+        user=user,
+    )
 
 
 def execute_sql_query(

@@ -1,20 +1,20 @@
 {
-  "admin": {
-    "passwords": [
-      "AdminPass123!",
-      "admin"
-    ],
-    "role": "admin",
-    "allowed_tables": [
-      "*"
-    ]
-  },
   "guest": {
     "passwords": [
       "guest",
       ""
     ],
     "role": "viewer",
+    "allowed_tables": [
+      "*"
+    ]
+  },
+  "admin": {
+    "passwords": [
+      "AdminPass123!",
+      "admin"
+    ],
+    "role": "admin",
     "allowed_tables": [
       "*"
     ]
@@ -29,20 +29,30 @@
       "*"
     ]
   },
-  "finsight": {
-    "passwords": [
-      "finsight",
-      "Finsight@2026"
-    ],
-    "role": "admin",
-    "allowed_tables": [
-      "*"
-    ]
-  },
   "user1": {
     "passwords": [
       "User1Pass123!",
       "user1"
+    ],
+    "role": "viewer",
+    "allowed_tables": [
+      "*"
+    ]
+  },
+  "user2": {
+    "passwords": [
+      "user2",
+      "User2Pass123!",
+      "user123"
+    ],
+    "role": "viewer",
+    "allowed_tables": [
+      "rpt_surgery"
+    ]
+  },
+  "finsight": {
+    "passwords": [
+      "finsight@123"
     ],
     "role": "viewer",
     "allowed_tables": [
